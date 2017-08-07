@@ -75,6 +75,7 @@ typedef struct {
 
 } ngx_http_gettoken_ctx_t;
 
+//连接状态机
 typedef enum {
     STATE_DISCONNECTED,
     STATE_CONNECTING,
@@ -278,7 +279,7 @@ static char *
 ngx_http_gettoken_parse_url(ngx_conf_t *cf, ngx_http_gettoken_server_t *server)
 {
     ngx_str_t *value;
-    u_char *p;
+    //u_char *p;
     value = cf->args->elts;
     ngx_url_t   *u = &server->parsed_url;
     ngx_memzero(u, sizeof(ngx_url_t));
@@ -317,7 +318,7 @@ ngx_http_gettoken_server(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
     ngx_str_t                      *value;
     ngx_http_gettoken_server_t    *server;
     ngx_http_gettoken_main_conf_t *cnf = conf;
-    ngx_int_t                      i;
+    //ngx_int_t                      i;
 
     /* It should be safe to just use latest server from array */
     server = ((ngx_http_gettoken_server_t *) cnf->servers->elts + (cnf->servers->nelts - 1));
@@ -349,6 +350,9 @@ ngx_http_gettoken_server(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
     return rv;
 }
 
+//取一个可用连接, 可以看出做了upstream连接池了, 当一个http业务来了,就取出一个可用的 upstream(to application server)的一个连接
+//相应的,应该有一个业务完成后,就把此连接返回给ngx_queue* 来cache
+/*
 static int
 ngx_http_gettoken_get_connection(ngx_http_gettoken_ctx_t *ctx)
 {
@@ -356,9 +360,8 @@ ngx_http_gettoken_get_connection(ngx_http_gettoken_ctx_t *ctx)
     ngx_queue_t *q;
     ngx_http_gettoken_connection_t *c;
 
-    /*
-     * If we already have a connection, just say we got them one.
-     */
+      //If we already have a connection, just say we got them one.
+     
     if (ctx->c != NULL)
         return 1;
 
@@ -381,6 +384,7 @@ ngx_http_gettoken_get_connection(ngx_http_gettoken_ctx_t *ctx)
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, ctx->r->connection->log, 0, "http_gettoken: No connection available at the moment, waiting...");
     return 0;
 }
+*/
 
 static void
 ngx_http_gettoken_return_connection(ngx_http_gettoken_connection_t *c)
@@ -404,7 +408,7 @@ ngx_http_gettoken_return_connection(ngx_http_gettoken_connection_t *c)
         ngx_http_gettoken_wake_request((ngx_queue_data(q, ngx_http_gettoken_ctx_t, queue))->r);
     }
 }
-
+/*
 static void
 ngx_http_gettoken_reply_connection(ngx_http_gettoken_connection_t *c, int error_code, char* error_msg)
 {
@@ -426,7 +430,7 @@ ngx_http_gettoken_reply_connection(ngx_http_gettoken_connection_t *c, int error_
 
     ngx_http_gettoken_wake_request(ctx->r);
 }
-
+*/
 static void
 ngx_http_gettoken_dummy_write_handler(ngx_event_t *wev)
 {
@@ -466,11 +470,12 @@ ngx_http_gettoken_restore_handlers(ngx_connection_t *conn)
 }
 #endif
 
+//TCP三次握手完成, 物理连接建立完成了
 static void
 ngx_http_gettoken_connection_established(ngx_http_gettoken_connection_t *c)
 {
     ngx_connection_t *conn;
-    ngx_int_t rc;
+    //ngx_int_t rc;
 
     conn = c->conn.connection;
     ngx_del_timer(conn->read);
@@ -482,6 +487,9 @@ ngx_http_gettoken_connection_established(ngx_http_gettoken_connection_t *c)
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0, "http_gettoken: Initializing connection using URL \"%V\"", &c->server->url);
     /*
+     *利用已经有的连接 conection->fd进行init
+     ldap_init_fd() allocates  an  LDAP  structure using an existing connection on the provided socket.  
+     One of these routines must be called before  any  operations are attempted.
     rc = ldap_init_fd(c->conn.connection->fd, LDAP_PROTO_EXT, (const char *) c->server->url.data, &c->ld);
     if (rc != LDAP_SUCCESS) {
         ngx_log_error(NGX_LOG_ERR, c->log, errno, "http_gettoken: ldap_init_fd() failed (%d: %s)", rc, ldap_err2string(rc));
@@ -504,7 +512,8 @@ ngx_http_gettoken_connection_established(ngx_http_gettoken_connection_t *c)
         return;
     }*/
     //ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0, "http_gettoken: ldap_sasl_bind() -> msgid=%d", c->msgid);
-    c->state = STATE_FETECH_ACCESS_TOKEN;
+
+    c->state = STATE_ESTABLISHED;
     ngx_add_timer(c->conn.connection->read, c->server->request_im_token_timeout);
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, c->log, 0, "http_gettoken: bind_timeout=%d", c->server->request_im_token_timeout);
 }
@@ -597,9 +606,9 @@ ngx_http_gettoken_read_handler(ngx_event_t *rev)
     ngx_connection_t *conn;
     ngx_http_gettoken_connection_t *c;
     ngx_int_t rc;
-    struct timeval timeout = {0, 0};
-    int error_code;
-    char *error_msg;
+    //struct timeval timeout = {0, 0};
+    //int error_code;
+    //char *error_msg;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, rev->log, 0, "http_gettoken: Read handler");
 
@@ -736,7 +745,7 @@ ngx_http_gettoken_init_connections(ngx_cycle_t *cycle)
     ngx_pool_cleanup_t *cleanup;
     ngx_connection_t *dummy_conn;
     ngx_uint_t i, j;
-    int option;
+    //int option;
 
     halmcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_gettoken_module);
     if (halmcf == NULL || halmcf->servers == NULL) {
@@ -900,6 +909,9 @@ ngx_http_gettoken_handler(ngx_http_request_t *r)
         return NGX_HTTP_FORBIDDEN;
     }
 
+    return ngx_http_gettoken_authenticate(r, ctx, lcf); 
+
+
     return NGX_OK;
 }
 
@@ -967,6 +979,9 @@ ngx_http_gettoken_authenticate(ngx_http_request_t *r, ngx_http_gettoken_ctx_t *c
                 /* No groups to validate, try binding next */
                 ctx->phase = PHASE_CHECK_OK;
                 ctx->iteration = 0;
+                break;
+            case PHASE_CHECK_OK:
+                //to-do 
                 break;
 
 

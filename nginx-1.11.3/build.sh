@@ -6,4 +6,4 @@
 #########################################################################
 #!/bin/bash
 
-./configure --with-debug --prefix=/data/nginx 
+./configure --with-debug --prefix=$(pwd)/../bin --add-module=$(pwd)/.. --with-pcre=$(pwd)/../pcre-8.40
